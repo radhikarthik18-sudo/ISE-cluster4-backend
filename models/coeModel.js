@@ -1,19 +1,10 @@
 const mongoose = require('mongoose')
 
-// A single colored event block. Day is optional:
-// - set (e.g. "Sat") when the event was added by clicking a specific date number
-// - null/undefined when added as a general week-spanning event
-const eventSchema = new mongoose.Schema(
-  {
-    Text: String,
-    Color: String, // hex color, e.g. "#e2555c"
-    Day: String, // "Sun" | "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | null
-  },
-  { _id: false }
-)
-
+// A single week-grid row. Year is needed alongside Month + the day-number
+// columns to reconstruct real ISO dates for matching against Events.
 const weekEntrySchema = new mongoose.Schema({
   Month: String,
+  Year: Number,
   Week: String,
   Sun: String,
   Mon: String,
@@ -23,8 +14,19 @@ const weekEntrySchema = new mongoose.Schema({
   Fri: String,
   Sat: String,
   WorkingDays: String,
-  Events: [eventSchema],
 })
+
+// Events are now a flat, date-keyed list — decoupled from the week grid,
+// so they can be added before weeks are generated, fetched in bulk
+// (holidays), or span a date range, and still land on the right cell.
+const eventSchema = new mongoose.Schema(
+  {
+    Text: String,
+    Color: String, // hex color
+    Date: String, // ISO "YYYY-MM-DD"
+  },
+  { _id: false }
+)
 
 const coeSchema = new mongoose.Schema({
   Title: { type: String, required: true },
@@ -36,17 +38,13 @@ const coeSchema = new mongoose.Schema({
   Vision: String,
   Mission: String,
 
-  // NOTE: Institute name/address/logos are no longer stored per-document —
-  // they're now rendered by the shared <InstituteHeader /> component so
-  // every document (current and future) stays consistent automatically.
-
-  // Footer signatories, in display order (defaults to 4 to match the sample CoE)
   Signatories: {
     type: [String],
     default: ['COE-Coordinator', 'Controller of Examinations', 'Dean Academics', 'Principal'],
   },
 
   Entries: [weekEntrySchema],
+  Events: [eventSchema],
 })
 
 const COE = mongoose.model('COE', coeSchema)

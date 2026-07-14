@@ -15,8 +15,8 @@ router.post('/', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const docs = await COE.find()
-      .select('Title Semester AcademicYear Term createdAt')
-      .sort({ _id: -1 }) // newest first
+      .select('Title Semester AcademicYear Term')
+      .sort({ _id: -1 })
     res.json(docs)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -45,4 +45,5 @@ router.put('/:id', async (req, res) => {
     res.status(400).json({ error: err.message })
   }
 })
+
 module.exports = router
