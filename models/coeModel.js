@@ -1,7 +1,5 @@
 const mongoose = require('mongoose')
 
-// A single week-grid row. Year is needed alongside Month + the day-number
-// columns to reconstruct real ISO dates for matching against Events.
 const weekEntrySchema = new mongoose.Schema({
   Month: String,
   Year: Number,
@@ -13,17 +11,15 @@ const weekEntrySchema = new mongoose.Schema({
   Thu: String,
   Fri: String,
   Sat: String,
-  WorkingDays: String,
+  WorkingDays: Number, // now auto-computed, stored for record-keeping
 })
 
-// Events are now a flat, date-keyed list — decoupled from the week grid,
-// so they can be added before weeks are generated, fetched in bulk
-// (holidays), or span a date range, and still land on the right cell.
 const eventSchema = new mongoose.Schema(
   {
     Text: String,
-    Color: String, // hex color
+    Color: String,
     Date: String, // ISO "YYYY-MM-DD"
+    IsHoliday: { type: Boolean, default: false }, // true = reduces Working Days count
   },
   { _id: false }
 )
