@@ -121,4 +121,14 @@ router.patch('/allocate', async (req, res) => {
     res.status(400).json({ error: err.message })
   }
 })
+// GET /api/students/by-semester?Semester=3 - all students in a given semester
+router.get('/by-semester/list', async (req, res) => {
+  try {
+    const { Semester } = req.query
+    const students = await StudentEntry.find({ Semester }).select('USN StudentName Section')
+    res.json(students)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 module.exports = router
