@@ -26,6 +26,10 @@ const facultySchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  Roles: {
+    type: [String],
+    default: ['Faculty'],
+  },
   submittedAt: {
     type: Date,
     default: Date.now,

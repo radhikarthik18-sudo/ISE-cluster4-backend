@@ -131,4 +131,28 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 })
 
+const jwt = require('jsonwebtoken')
+
+// POST /api/faculty/login
+router.post('/login', async (req, res) => {
+  try {
+    const { FacultyID, Password } = req.body
+
+    const faculty = await Faculty.findOne({ FacultyID })
+    if (!faculty) return res.status(401).json({ error: 'Invalid Faculty ID or Password' })
+
+    const isMatch = await bcrypt.compare(Password, faculty.Password)
+    if (!isMatch) return res.status(401).json({ error: 'Invalid Faculty ID or Password' })
+
+    const token = jwt.sign(
+      { FacultyID: faculty.FacultyID, Name: faculty.Name, Roles: faculty.Roles },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    )
+
+    res.json({ token, FacultyID: faculty.FacultyID, Name: faculty.Name, Roles: faculty.Roles })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 module.exports = router
