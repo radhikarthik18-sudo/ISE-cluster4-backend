@@ -19,7 +19,8 @@ app.use('/api/course-faculty-map', courseFacultyMapRoutes)
 const coeRoutes = require('./routes/coeRoutes')
 app.use('/api/coe', coeRoutes)
 app.use('/api/lesson-plan', lessonPlanRoutes)
-
+const attendanceRoutes = require('./routes/attendanceRoutes')
+app.use('/api/attendance', attendanceRoutes)
 
 mongoose.connect(process.env.MONGO_URI)
     .then(()=>console.log('MongoDB connected'))
