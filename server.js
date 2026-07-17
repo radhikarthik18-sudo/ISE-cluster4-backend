@@ -5,6 +5,7 @@ const cors =require('cors')
 const studententryroutes = require('./routes/studententryroutes')
 const app = express()
 const courseRoutes = require('./routes/courseRoutes')
+const lessonPlanRoutes = require('./routes/lessonPlanRoutes')
 
 
 app.use(cors())
@@ -17,6 +18,9 @@ const courseFacultyMapRoutes = require('./routes/courseFacultyMapRoutes')
 app.use('/api/course-faculty-map', courseFacultyMapRoutes)
 const coeRoutes = require('./routes/coeRoutes')
 app.use('/api/coe', coeRoutes)
+app.use('/api/lesson-plan', lessonPlanRoutes)
+
+
 mongoose.connect(process.env.MONGO_URI)
     .then(()=>console.log('MongoDB connected'))
     .catch((err) => console.error('MongoDB Connection error:',err));
