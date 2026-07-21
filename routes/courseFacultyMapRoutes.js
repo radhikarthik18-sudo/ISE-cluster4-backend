@@ -95,4 +95,14 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
+// GET /api/course-faculty-map/by-faculty/:facultyId
+router.get('/by-faculty/:facultyId', async (req, res) => {
+  try {
+    const maps = await CourseFacultyMap.find({ FacultyID: req.params.facultyId })
+    res.json(maps)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 module.exports = router
