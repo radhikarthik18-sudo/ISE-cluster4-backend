@@ -4,7 +4,8 @@ const Faculty = require('../models/facultyrecordmodels')
 const bcrypt = require('bcryptjs')
 const multer = require('multer')
 const xlsx = require('xlsx')
-
+const jwt = require('jsonwebtoken')
+const { verifyToken, requireRole } = require('../middleware/authMiddleware')
 const upload = multer({ storage: multer.memoryStorage() })
 
 router.post('/', async (req, res) => {
@@ -15,7 +16,7 @@ router.post('/', async (req, res) => {
       const salt = await bcrypt.genSalt(10)
       facultyData.Password = await bcrypt.hash(facultyData.Password, salt)
     }
-    
+
     const newFaculty = new Faculty(facultyData)
     const saved = await newFaculty.save()
     res.status(201).json(saved)
@@ -27,7 +28,6 @@ router.post('/', async (req, res) => {
   }
 })
 
-
 router.get('/', async (req, res) => {
   try {
     const faculty = await Faculty.find().select('FacultyID Name')
@@ -37,10 +37,10 @@ router.get('/', async (req, res) => {
   }
 })
 
-// GET /api/faculty/:id - full details of one faculty member
-router.get('/:id', async (req, res) => {
+// GET /api/faculty/:facultyId - full details of one faculty member
+router.get('/:facultyId', async (req, res) => {
   try {
-    const faculty = await Faculty.findById(req.params.id)
+    const faculty = await Faculty.findOne({ FacultyID: req.params.facultyId })
     if (!faculty) return res.status(404).json({ error: 'Faculty not found' })
     res.json(faculty)
   } catch (err) {
@@ -48,14 +48,15 @@ router.get('/:id', async (req, res) => {
   }
 })
 
-// PUT /api/faculty/:id - update faculty details (not password)
-router.put('/:id', async (req, res) => {
+// PUT /api/faculty/:facultyId - update faculty details (not password)
+router.put('/:facultyId', verifyToken, requireRole('Admin'), async (req, res) => {
   try {
-    const { Password, ...updateData } = req.body   // strip out Password if present
-    const updated = await Faculty.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-      runValidators: true,
-    })
+    const { Password, ...updateData } = req.body
+    const updated = await Faculty.findOneAndUpdate(
+      { FacultyID: req.params.facultyId },
+      updateData,
+      { new: true, runValidators: true }
+    )
     if (!updated) return res.status(404).json({ error: 'Faculty not found' })
     res.json(updated)
   } catch (err) {
@@ -66,10 +67,10 @@ router.put('/:id', async (req, res) => {
   }
 })
 
-// DELETE /api/faculty/:id
-router.delete('/:id', async (req, res) => {
+// DELETE /api/faculty/:facultyId
+router.delete('/:facultyId', verifyToken, requireRole('Admin'), async (req, res) => {
   try {
-    const deleted = await Faculty.findByIdAndDelete(req.params.id)
+    const deleted = await Faculty.findOneAndDelete({ FacultyID: req.params.facultyId })
     if (!deleted) return res.status(404).json({ error: 'Faculty not found' })
     res.json({ message: 'Faculty deleted' })
   } catch (err) {
@@ -77,14 +78,15 @@ router.delete('/:id', async (req, res) => {
   }
 })
 
-router.patch('/:id/reset-password', async (req, res) => {
+// PATCH /api/faculty/:facultyId/reset-password
+router.patch('/:facultyId/reset-password', verifyToken, requireRole('Admin'), async (req, res) => {
   try {
     const { newPassword } = req.body
     const salt = await bcrypt.genSalt(10)
     const hashed = await bcrypt.hash(newPassword, salt)
 
-    const updated = await Faculty.findByIdAndUpdate(
-      req.params.id,
+    const updated = await Faculty.findOneAndUpdate(
+      { FacultyID: req.params.facultyId },
       { Password: hashed },
       { new: true }
     )
@@ -95,10 +97,8 @@ router.patch('/:id/reset-password', async (req, res) => {
   }
 })
 
-
-
 // POST /api/faculty/upload - bulk upload from Excel
-router.post('/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', verifyToken, requireRole('Admin'), upload.single('file'), async (req, res) => {
   try {
     const workbook = xlsx.read(req.file.buffer, { type: 'buffer' })
     const sheetName = workbook.SheetNames[0]
@@ -131,8 +131,6 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 })
 
-const jwt = require('jsonwebtoken')
-
 // POST /api/faculty/login
 router.post('/login', async (req, res) => {
   try {
@@ -155,4 +153,5 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
 module.exports = router
