@@ -1,12 +1,13 @@
 const express = require('express')
-const router=express.Router()
-const StudentEntry=require('../models/studententrymodels')
+const router = express.Router()
+const StudentEntry = require('../models/studententrymodels')
 const multer = require('multer')
 const xlsx = require('xlsx')
+const { verifyToken, requireRole } = require('../middleware/authMiddleware')
 
 const upload = multer({ storage: multer.memoryStorage() })
 
-router.post('/', async (req, res) => {
+router.post('/', verifyToken, requireRole('Admin', 'StudentCoordinator'), async (req, res) => {
   try {
     const newStudent = new StudentEntry(req.body)
     const savedStudent = await newStudent.save()
@@ -19,9 +20,8 @@ router.post('/', async (req, res) => {
   }
 })
 
-
-// GET /api/students/years - list of years that have data
-router.get('/Years', async (req, res) => {
+// GET /api/students/Years - list of years that have data
+router.get('/Years', verifyToken, requireRole('Admin', 'HOD', 'StudentCoordinator'), async (req, res) => {
   try {
     const years = await StudentEntry.distinct('Year')
     res.json(years)
@@ -30,8 +30,8 @@ router.get('/Years', async (req, res) => {
   }
 })
 
-// GET /api/students?year=2025 - list of usn+name for a given year
-router.get('/', async (req, res) => {
+// GET /api/students?Year=2025 - list of usn+name for a given year
+router.get('/', verifyToken, requireRole('Admin', 'HOD', 'StudentCoordinator'), async (req, res) => {
   try {
     const { Year } = req.query
     const students = await StudentEntry.find({ Year }).select('USN StudentName')
@@ -42,7 +42,7 @@ router.get('/', async (req, res) => {
 })
 
 // GET /api/students/:id - full details of one student
-router.get('/:id', async (req, res) => {
+router.get('/:id', verifyToken, requireRole('Admin', 'HOD', 'StudentCoordinator'), async (req, res) => {
   try {
     const student = await StudentEntry.findById(req.params.id)
     if (!student) return res.status(404).json({ error: 'Student not found' })
@@ -53,7 +53,7 @@ router.get('/:id', async (req, res) => {
 })
 
 // POST /api/students/upload - bulk upload from Excel
-router.post('/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', verifyToken, requireRole('Admin', 'StudentCoordinator'), upload.single('file'), async (req, res) => {
   try {
     const { Year } = req.body
 
@@ -85,7 +85,6 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const saved = await StudentEntry.insertMany(students, { ordered: false })
     res.status(201).json({ count: saved.length })
   } catch (err) {
-    // insertMany with ordered:false still throws, but includes partial results
     if (err.code === 11000 || err.writeErrors) {
       const insertedCount = err.result?.result?.nInserted || err.insertedDocs?.length || 0
       const duplicateCount = err.writeErrors?.length || 0
@@ -98,10 +97,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 })
 
 // PATCH /api/students/allocate - bulk assign Semester + Section to selected students
-router.patch('/allocate', async (req, res) => {
+router.patch('/allocate', verifyToken, requireRole('Admin', 'StudentCoordinator'), async (req, res) => {
   try {
-    console.log('Allocate request body:', req.body)   // ← add this
-
     const { studentIds, Semester, Section } = req.body
 
     let updatedCount = 0
@@ -111,18 +108,18 @@ router.patch('/allocate', async (req, res) => {
         { Semester, Section },
         { new: true }
       )
-      console.log('Updated one:', updated ? updated.USN : 'NOT FOUND')   // ← add this too
       if (updated) updatedCount++
     }
 
     res.json({ message: `${updatedCount} students allocated` })
   } catch (err) {
-    console.log('Allocate error:', err.message)   // ← add this
     res.status(400).json({ error: err.message })
   }
 })
-// GET /api/students/by-semester?Semester=3 - all students in a given semester
-router.get('/by-semester/list', async (req, res) => {
+
+// GET /api/students/by-semester/list?Semester=3 - open to any logged-in user
+// (Faculty needs this in the background for Attendance / Course-Student Map)
+router.get('/by-semester/list', verifyToken, async (req, res) => {
   try {
     const { Semester } = req.query
     const students = await StudentEntry.find({ Semester }).select('USN StudentName Section')
@@ -131,4 +128,5 @@ router.get('/by-semester/list', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
 module.exports = router
