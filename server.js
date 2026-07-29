@@ -22,6 +22,11 @@ app.use('/api/lesson-plan', lessonPlanRoutes)
 const attendanceRoutes = require('./routes/attendanceRoutes')
 app.use('/api/attendance', attendanceRoutes)
 
+const coAllocationRoutes = require('./routes/coAllocationRoutes')
+const copoMappingRoutes = require('./routes/copoMappingRoutes')
+app.use('/api/co-allocation', coAllocationRoutes)
+app.use('/api/copo-mapping', copoMappingRoutes)
+
 mongoose.connect(process.env.MONGO_URI)
     .then(()=>console.log('MongoDB connected'))
     .catch((err) => console.error('MongoDB Connection error:',err));
