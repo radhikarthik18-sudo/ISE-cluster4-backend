@@ -28,9 +28,13 @@ router.post('/', async (req, res) => {
   }
 })
 
-router.get('/', async (req, res) => {
+router.get('/', verifyToken, async (req, res) => {
   try {
-    const faculty = await Faculty.find().select('FacultyID Name')
+    const { status } = req.query
+    const filter = status === 'inactive' ? { IsActive: false }
+      : status === 'all' ? {}
+      : { IsActive: { $ne: false } }
+    const faculty = await Faculty.find(filter).select('FacultyID Name IsActive')
     res.json(faculty)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -67,12 +71,38 @@ router.put('/:facultyId', verifyToken, requireRole('Admin'), async (req, res) =>
   }
 })
 
-// DELETE /api/faculty/:facultyId
-router.delete('/:facultyId', verifyToken, requireRole('Admin'), async (req, res) => {
+// PATCH /api/faculty/:facultyId/deactivate
+router.patch('/:facultyId/deactivate', verifyToken, requireRole('Admin'), async (req, res) => {
   try {
-    const deleted = await Faculty.findOneAndDelete({ FacultyID: req.params.facultyId })
-    if (!deleted) return res.status(404).json({ error: 'Faculty not found' })
-    res.json({ message: 'Faculty deleted' })
+    const { remarks } = req.body
+
+    const updated = await Faculty.findOneAndUpdate(
+      { FacultyID: req.params.facultyId },
+      { IsActive: false, DeactivationRemarks: remarks, DeactivatedAt: new Date(), CreditsAllotted: 0 },
+      { new: true }
+    )
+    if (!updated) return res.status(404).json({ error: 'Faculty not found' })
+
+    // Cascade: remove all course allocations tied to this faculty
+    const CourseFacultyMap = require('../models/courseFacultyMapModel')
+    await CourseFacultyMap.deleteMany({ FacultyID: req.params.facultyId })
+
+    res.json({ message: 'Faculty deactivated', faculty: updated })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// PATCH /api/faculty/:facultyId/reactivate
+router.patch('/:facultyId/reactivate', verifyToken, requireRole('Admin'), async (req, res) => {
+  try {
+    const updated = await Faculty.findOneAndUpdate(
+      { FacultyID: req.params.facultyId },
+      { IsActive: true, DeactivationRemarks: '', DeactivatedAt: null },
+      { new: true }
+    )
+    if (!updated) return res.status(404).json({ error: 'Faculty not found' })
+    res.json({ message: 'Faculty reactivated', faculty: updated })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -97,6 +127,21 @@ router.patch('/:facultyId/reset-password', verifyToken, requireRole('Admin'), as
   }
 })
 
+// PATCH /api/faculty/:facultyId/roles
+router.patch('/:facultyId/roles', verifyToken, requireRole('Admin'), async (req, res) => {
+  try {
+    const { Roles } = req.body
+    const updated = await Faculty.findOneAndUpdate(
+      { FacultyID: req.params.facultyId },
+      { Roles },
+      { new: true }
+    )
+    if (!updated) return res.status(404).json({ error: 'Faculty not found' })
+    res.json(updated)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 // POST /api/faculty/upload - bulk upload from Excel
 router.post('/upload', verifyToken, requireRole('Admin'), upload.single('file'), async (req, res) => {
   try {

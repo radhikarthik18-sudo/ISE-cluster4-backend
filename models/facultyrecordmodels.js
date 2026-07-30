@@ -30,6 +30,9 @@ const facultySchema = new mongoose.Schema({
     type: [String],
     default: ['Faculty'],
   },
+  IsActive: { type: Boolean, default: true },
+  DeactivationRemarks: String,
+  DeactivatedAt: Date,
   submittedAt: {
     type: Date,
     default: Date.now,
