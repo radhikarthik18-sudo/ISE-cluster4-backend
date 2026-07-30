@@ -92,6 +92,7 @@ router.get('/:id/syllabus', verifyToken, async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
 router.delete('/:id', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator'), async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
