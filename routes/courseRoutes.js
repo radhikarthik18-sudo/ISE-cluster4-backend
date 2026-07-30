@@ -1,10 +1,32 @@
 const express = require('express')
 const router = express.Router()
+const multer = require('multer')
 const Course = require('../models/courseModel')
+const { verifyToken, requireRole } = require('../middleware/authMiddleware')
 
-router.post('/', async (req, res) => {
+// Holds the uploaded PDF in memory just long enough to write it into MongoDB.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap — raise if syllabi run larger
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype !== 'application/pdf') {
+      return cb(new Error('Only PDF files are allowed for the syllabus'))
+    }
+    cb(null, true)
+  },
+})
+
+router.post('/', upload.single('SyllabusPDF'), async (req, res) => {
   try {
-    const newCourse = new Course(req.body)
+    const courseData = { ...req.body }
+    if (req.file) {
+      courseData.SyllabusPDF = {
+        data: req.file.buffer,
+        contentType: req.file.mimetype,
+        filename: req.file.originalname,
+      }
+    }
+    const newCourse = new Course(courseData)
     const saved = await newCourse.save()
     res.status(201).json(saved)
   } catch (err) {
@@ -26,7 +48,9 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id)
+    // Exclude the PDF binary from the general fetch — it's large and most
+    // callers (forms, lists) don't need it. Use /:id/syllabus for the file.
+    const course = await Course.findById(req.params.id).select('-SyllabusPDF.data')
     if (!course) return res.status(404).json({ error: 'Course not found' })
     res.json(course)
   } catch (err) {
@@ -34,9 +58,42 @@ router.get('/:id', async (req, res) => {
   }
 })
 
-const { verifyToken, requireRole } = require('../middleware/authMiddleware')
+// GET /api/courses/:id/syllabus — view/download the syllabus PDF.
+// Allowed for Admin/HOD/AcademicCoordinator, or any faculty allocated to this course.
+router.get('/:id/syllabus', verifyToken, async (req, res) => {
+  try {
+    const course = await Course.findById(req.params.id)
+    if (!course) return res.status(404).json({ error: 'Course not found' })
+    if (!course.SyllabusPDF || !course.SyllabusPDF.data) {
+      return res.status(404).json({ error: 'No syllabus uploaded for this course' })
+    }
 
-// DELETE /api/courses/:id
+    const privilegedRoles = ['Admin', 'HOD', 'AcademicCoordinator']
+    const isPrivileged = privilegedRoles.includes(req.user.role)
+
+    if (!isPrivileged) {
+      // NOTE: assumes the JWT payload includes the logged-in faculty's FacultyID.
+      // Adjust this field name if your token payload uses something else.
+      const CourseFacultyMap = require('../models/courseFacultyMapModel')
+      const isAllocated = await CourseFacultyMap.exists({
+        CourseCode: course.CourseCode,
+        FacultyID: req.user.FacultyID,
+      })
+      if (!isAllocated) {
+        return res.status(403).json({ error: 'You are not allocated to this course' })
+      }
+    }
+
+    res.set({
+      'Content-Type': course.SyllabusPDF.contentType || 'application/pdf',
+      'Content-Disposition': `inline; filename="${course.SyllabusPDF.filename || 'syllabus.pdf'}"`,
+    })
+    res.send(course.SyllabusPDF.data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 router.delete('/:id', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator'), async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
@@ -48,7 +105,6 @@ router.delete('/:id', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordina
     const COPOMapping = require('../models/copoMappingModel')
     const Faculty = require('../models/facultyrecordmodels')
 
-    // Reverse credits for every faculty currently allocated to this course
     const relatedMappings = await CourseFacultyMap.find({ CourseCode: course.CourseCode })
     for (const mapping of relatedMappings) {
       await Faculty.findOneAndUpdate(
@@ -57,7 +113,6 @@ router.delete('/:id', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordina
       )
     }
 
-    // Cascade delete everything tied to this course
     await CourseFacultyMap.deleteMany({ CourseCode: course.CourseCode })
     await LessonPlan.deleteMany({ CourseCode: course.CourseCode })
     await COAllocation.deleteMany({ CourseCode: course.CourseCode })
