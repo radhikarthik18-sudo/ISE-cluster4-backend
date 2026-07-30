@@ -35,6 +35,11 @@ const courseSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  SyllabusPDF: {
+  data: Buffer,
+  contentType: String,
+  filename: String,
+},
 })
 
 const Course = mongoose.model('Course', courseSchema)
