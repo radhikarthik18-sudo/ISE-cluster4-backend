@@ -34,7 +34,7 @@ router.get('/', verifyToken, async (req, res) => {
     const filter = status === 'inactive' ? { IsActive: false }
       : status === 'all' ? {}
       : { IsActive: { $ne: false } }
-    const faculty = await Faculty.find(filter).select('FacultyID Name IsActive')
+    const faculty = await Faculty.find(filter).select('FacultyID Name IsActive Roles')
     res.json(faculty)
   } catch (err) {
     res.status(500).json({ error: err.message })
