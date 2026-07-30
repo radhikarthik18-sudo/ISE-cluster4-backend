@@ -69,11 +69,10 @@ router.get('/:id/syllabus', verifyToken, async (req, res) => {
     }
 
     const privilegedRoles = ['Admin', 'HOD', 'AcademicCoordinator']
-    const isPrivileged = privilegedRoles.includes(req.user.role)
+    const userRoles = req.user?.Roles || []
+    const isPrivileged = privilegedRoles.some((r) => userRoles.includes(r))
 
     if (!isPrivileged) {
-      // NOTE: assumes the JWT payload includes the logged-in faculty's FacultyID.
-      // Adjust this field name if your token payload uses something else.
       const CourseFacultyMap = require('../models/courseFacultyMapModel')
       const isAllocated = await CourseFacultyMap.exists({
         CourseCode: course.CourseCode,
@@ -93,7 +92,6 @@ router.get('/:id/syllabus', verifyToken, async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
-
 router.delete('/:id', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator'), async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
