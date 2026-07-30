@@ -16,9 +16,7 @@ const upload = multer({
   },
 })
 
-router.post('/', upload.single('SyllabusPDF'), async (req, res) => {
-   console.log('BODY:', req.body)
-  console.log('FILE:', req.file)
+router.post('/', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator'), upload.single('SyllabusPDF'), async (req, res) => {
   try {
     const courseData = { ...req.body }
     if (req.file) {
@@ -39,7 +37,7 @@ router.post('/', upload.single('SyllabusPDF'), async (req, res) => {
   }
 })
 
-router.get('/', async (req, res) => {
+router.get('/', verifyToken, async (req, res) => {
   try {
     const courses = await Course.find().select('CourseCode CourseTitle')
     res.json(courses)
@@ -48,7 +46,7 @@ router.get('/', async (req, res) => {
   }
 })
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', verifyToken, async (req, res) => {
   try {
     // Exclude the PDF binary from the general fetch — it's large and most
     // callers (forms, lists) don't need it. Use /:id/syllabus for the file.
