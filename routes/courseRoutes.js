@@ -17,6 +17,8 @@ const upload = multer({
 })
 
 router.post('/', upload.single('SyllabusPDF'), async (req, res) => {
+   console.log('BODY:', req.body)
+  console.log('FILE:', req.file)
   try {
     const courseData = { ...req.body }
     if (req.file) {
