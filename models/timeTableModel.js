@@ -1,11 +1,10 @@
 const mongoose = require('mongoose')
 
-// One subject/activity allocated within a slot. CourseCode present = a real
-// course; ManualText present = a free-text entry (event, activity, etc.).
 const timeTableItemSchema = new mongoose.Schema(
   {
     CourseCode: String,
     CourseTitle: String,
+    Initial: String,
     FacultyID: String,
     FacultyName: String,
     ManualText: String,
@@ -13,8 +12,6 @@ const timeTableItemSchema = new mongoose.Schema(
   { _id: false }
 )
 
-// A Day+Period cell can now hold multiple items (e.g. parallel lab batches,
-// elective options running at the same time).
 const timeTableSlotSchema = new mongoose.Schema({
   Day: String,
   PeriodIndex: Number,
@@ -24,6 +21,14 @@ const timeTableSlotSchema = new mongoose.Schema({
 const timeTableSchema = new mongoose.Schema({
   Section: { type: String, required: true, unique: true },
   Slots: [timeTableSlotSchema],
+
+  // Printed-document header metadata, all optional
+  ClassSemester: String, // e.g. "VII"
+  RoomNumber: String,
+  ClassTeacherName: String,
+  WEF: String, // "With Effect From" date, stored as plain string
+  AcademicYear: String, // e.g. "2026-27"
+  Term: String, // "ODD" | "EVEN"
 })
 
 module.exports = mongoose.model('TimeTable', timeTableSchema)

@@ -3,13 +3,12 @@ const router = express.Router()
 const TimeTable = require('../models/timeTableModel')
 const { verifyToken, requireRole } = require('../middleware/authMiddleware')
 
-// POST /api/timetable - save/update a section's full timetable
 router.post('/', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator'), async (req, res) => {
   try {
-    const { Section, Slots } = req.body
+    const { Section, Slots, ClassSemester, RoomNumber, ClassTeacherName, WEF, AcademicYear, Term } = req.body
     const updated = await TimeTable.findOneAndUpdate(
       { Section },
-      { Section, Slots },
+      { Section, Slots, ClassSemester, RoomNumber, ClassTeacherName, WEF, AcademicYear, Term },
       { new: true, upsert: true }
     )
     res.status(201).json(updated)
@@ -18,7 +17,6 @@ router.post('/', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator')
   }
 })
 
-// GET /api/timetable/by-section/:section
 router.get('/by-section/:section', verifyToken, async (req, res) => {
   try {
     const tt = await TimeTable.findOne({ Section: req.params.section })
@@ -28,8 +26,6 @@ router.get('/by-section/:section', verifyToken, async (req, res) => {
   }
 })
 
-// GET /api/timetable/by-faculty/:facultyId - this faculty's slots across all sections,
-// flattened out of each slot's Items array (a slot can hold multiple subjects/faculty).
 router.get('/by-faculty/:facultyId', verifyToken, async (req, res) => {
   try {
     const allTimeTables = await TimeTable.find({ 'Slots.Items.FacultyID': req.params.facultyId })
