@@ -4,10 +4,9 @@ const multer = require('multer')
 const Course = require('../models/courseModel')
 const { verifyToken, requireRole } = require('../middleware/authMiddleware')
 
-// Holds the uploaded PDF in memory just long enough to write it into MongoDB.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB cap — raise if syllabi run larger
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== 'application/pdf') {
       return cb(new Error('Only PDF files are allowed for the syllabus'))
@@ -16,7 +15,7 @@ const upload = multer({
   },
 })
 
-router.post('/', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator'), upload.single('SyllabusPDF'), async (req, res) => {
+router.post('/', upload.single('SyllabusPDF'), async (req, res) => {
   try {
     const courseData = { ...req.body }
     if (req.file) {
@@ -37,19 +36,17 @@ router.post('/', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator')
   }
 })
 
-router.get('/', verifyToken, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const courses = await Course.find().select('CourseCode CourseTitle')
+    const courses = await Course.find().select('CourseCode CourseTitle CourseCategory Initial L T P Credits')
     res.json(courses)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
-router.get('/:id', verifyToken, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    // Exclude the PDF binary from the general fetch — it's large and most
-    // callers (forms, lists) don't need it. Use /:id/syllabus for the file.
     const course = await Course.findById(req.params.id).select('-SyllabusPDF.data')
     if (!course) return res.status(404).json({ error: 'Course not found' })
     res.json(course)
@@ -58,8 +55,6 @@ router.get('/:id', verifyToken, async (req, res) => {
   }
 })
 
-// GET /api/courses/:id/syllabus — view/download the syllabus PDF.
-// Allowed for Admin/HOD/AcademicCoordinator, or any faculty allocated to this course.
 router.get('/:id/syllabus', verifyToken, async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
