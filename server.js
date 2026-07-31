@@ -27,6 +27,9 @@ const copoMappingRoutes = require('./routes/copoMappingRoutes')
 app.use('/api/co-allocation', coAllocationRoutes)
 app.use('/api/copo-mapping', copoMappingRoutes)
 
+const timeTableRoutes = require('./routes/timeTableRoutes')
+app.use('/api/timetable', timeTableRoutes)
+
 mongoose.connect(process.env.MONGO_URI)
     .then(()=>console.log('MongoDB connected'))
     .catch((err) => console.error('MongoDB Connection error:',err));
