@@ -87,7 +87,31 @@ router.get('/:id/syllabus', verifyToken, async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+router.put('/:id', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator'), upload.single('SyllabusPDF'), async (req, res) => {
+  try {
+    const updateData = { ...req.body }
+    if (req.file) {
+      updateData.SyllabusPDF = {
+        data: req.file.buffer,
+        contentType: req.file.mimetype,
+        filename: req.file.originalname,
+      }
+    }
 
+    const updated = await Course.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+      runValidators: true,
+    }).select('-SyllabusPDF.data')
+
+    if (!updated) return res.status(404).json({ error: 'Course not found' })
+    res.json(updated)
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({ error: `Course Code ${req.body.CourseCode} already exists` })
+    }
+    res.status(400).json({ error: err.message })
+  }
+})
 router.delete('/:id', verifyToken, requireRole('Admin', 'HOD', 'AcademicCoordinator'), async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
