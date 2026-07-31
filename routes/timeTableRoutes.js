@@ -55,31 +55,4 @@ router.get('/by-faculty/:facultyId', verifyToken, async (req, res) => {
   }
 })
 
-router.get('/by-faculty/:facultyId', verifyToken, async (req, res) => {
-  try {
-    console.log('Looking for FacultyID:', JSON.stringify(req.params.facultyId))
-    const allTimeTables = await TimeTable.find({ 'Slots.Items.FacultyID': req.params.facultyId })
-    console.log('Matched timetables:', allTimeTables.length)
-    const facultySlots = []
-    allTimeTables.forEach((tt) => {
-      tt.Slots.forEach((slot) => {
-        slot.Items.forEach((item) => {
-          if (item.FacultyID === req.params.facultyId) {
-            facultySlots.push({
-              Day: slot.Day,
-              PeriodIndex: slot.PeriodIndex,
-              CourseCode: item.CourseCode,
-              CourseTitle: item.CourseTitle,
-              Section: tt.Section,
-            })
-          }
-        })
-      })
-    })
-    console.log('Flattened faculty slots:', facultySlots.length)
-    res.json(facultySlots)
-  } catch (err) {
-    res.status(500).json({ error: err.message })
-  }
-})
 module.exports = router
