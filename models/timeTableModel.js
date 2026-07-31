@@ -7,6 +7,7 @@ const timeTableSlotSchema = new mongoose.Schema({
   CourseTitle: String,
   FacultyID: String,
   FacultyName: String,
+  ManualText: String,
 })
 
 const timeTableSchema = new mongoose.Schema({
