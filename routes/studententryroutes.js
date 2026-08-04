@@ -30,11 +30,16 @@ router.get('/Years', verifyToken, requireRole('Admin', 'HOD', 'StudentCoordinato
   }
 })
 
-// GET /api/students?Year=2025 - list of usn+name for a given year
+// GET /api/students?Year=2025  OR  ?Semester=3&Section=12-L  (or any combination)
 router.get('/', verifyToken, requireRole('Admin', 'HOD', 'StudentCoordinator'), async (req, res) => {
   try {
-    const { Year } = req.query
-    const students = await StudentEntry.find({ Year }).select('USN StudentName')
+    const { Year, Semester, Section } = req.query
+    const filter = {}
+    if (Year) filter.Year = Year
+    if (Semester) filter.Semester = Semester
+    if (Section) filter.Section = Section
+
+    const students = await StudentEntry.find(filter).select('USN StudentName Section Semester Year')
     res.json(students)
   } catch (err) {
     res.status(500).json({ error: err.message })
