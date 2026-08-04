@@ -1,10 +1,10 @@
 const express = require('express')
 const router = express.Router()
 const StudentEntry = require('../models/studententrymodels')
+const Faculty = require('../models/facultyrecordmodels')
 const { verifyToken, requireRole } = require('../middleware/authMiddleware')
+const { generateProctorReportPdf } = require('../utils/proctorReportPdf')
 
-// GET /api/proctor/summary?Semester=3&Section=12-L
-// Students in a group, sorted by USN, with current proctor if any.
 router.get('/summary', verifyToken, requireRole('Admin', 'ProctorCoordinator'), async (req, res) => {
   try {
     const { Semester, Section } = req.query
@@ -17,7 +17,6 @@ router.get('/summary', verifyToken, requireRole('Admin', 'ProctorCoordinator'), 
   }
 })
 
-// PATCH /api/proctor/assign - assign a set of students (a clicked range or scattered picks) to one faculty
 router.patch('/assign', verifyToken, requireRole('Admin', 'ProctorCoordinator'), async (req, res) => {
   try {
     const { studentIds, FacultyID, FacultyName } = req.body
@@ -34,7 +33,6 @@ router.patch('/assign', verifyToken, requireRole('Admin', 'ProctorCoordinator'),
   }
 })
 
-// PATCH /api/proctor/unassign - clear proctor from selected students
 router.patch('/unassign', verifyToken, requireRole('Admin', 'ProctorCoordinator'), async (req, res) => {
   try {
     const { studentIds } = req.body
@@ -51,7 +49,6 @@ router.patch('/unassign', verifyToken, requireRole('Admin', 'ProctorCoordinator'
   }
 })
 
-// GET /api/proctor/overview - how many proctees each faculty currently has, across all sections
 router.get('/overview', verifyToken, requireRole('Admin', 'ProctorCoordinator'), async (req, res) => {
   try {
     const overview = await StudentEntry.aggregate([
@@ -70,13 +67,66 @@ router.get('/overview', verifyToken, requireRole('Admin', 'ProctorCoordinator'),
   }
 })
 
-// GET /api/proctor/by-faculty/:facultyId - this faculty's own proctee list, with contact details
 router.get('/by-faculty/:facultyId', verifyToken, async (req, res) => {
   try {
     const students = await StudentEntry.find({ ProctorFacultyID: req.params.facultyId })
       .select('USN StudentName Semester Section StudentEmail StudentPhone')
       .sort({ USN: 1 })
     res.json(students)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// GET /api/proctor/report?Semester=7&AcademicYear=2026-27&Term=ODD
+// Generates and streams a printable PDF of proctor allotment across all sections in that semester.
+router.get('/report', verifyToken, requireRole('Admin', 'ProctorCoordinator'), async (req, res) => {
+  try {
+    const { Semester, AcademicYear, Term } = req.query
+    if (!Semester) return res.status(400).json({ error: 'Semester is required' })
+
+    const students = await StudentEntry.find({ Semester, ProctorFacultyID: { $nin: [null, ''] } })
+      .select('USN StudentName Section ProctorFacultyID ProctorFacultyName')
+      .sort({ Section: 1, USN: 1 })
+
+    if (students.length === 0) {
+      return res.status(404).json({ error: 'No assigned students found for this semester' })
+    }
+
+    // Group into Division -> Proctor -> students
+    const divisionMap = {}
+    students.forEach((s) => {
+      divisionMap[s.Section] = divisionMap[s.Section] || {}
+      divisionMap[s.Section][s.ProctorFacultyID] = divisionMap[s.Section][s.ProctorFacultyID] || {
+        FacultyID: s.ProctorFacultyID,
+        FacultyName: s.ProctorFacultyName,
+        students: [],
+      }
+      divisionMap[s.Section][s.ProctorFacultyID].students.push({ USN: s.USN, StudentName: s.StudentName })
+    })
+
+    // Attach Phone/Email for each unique proctor
+    const facultyIDs = [...new Set(students.map((s) => s.ProctorFacultyID))]
+    const facultyRecords = await Faculty.find({ FacultyID: { $in: facultyIDs } }).select('FacultyID Email Phone')
+    const facultyContactLookup = {}
+    facultyRecords.forEach((f) => {
+      facultyContactLookup[f.FacultyID] = { Phone: f.Phone, Email: f.Email }
+    })
+
+    const divisions = Object.entries(divisionMap).map(([sectionName, proctors]) => ({
+      name: sectionName,
+      proctorBlocks: Object.values(proctors).map((block) => ({
+        ...block,
+        Phone: facultyContactLookup[block.FacultyID]?.Phone,
+        Email: facultyContactLookup[block.FacultyID]?.Email,
+      })),
+    }))
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="Proctor_Allotment_Sem${Semester}.pdf"`)
+
+    const doc = generateProctorReportPdf({ semester: Semester, academicYear: AcademicYear, term: Term, divisions })
+    doc.pipe(res)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
