@@ -129,4 +129,33 @@ router.get('/by-semester/list', verifyToken, async (req, res) => {
   }
 })
 
+// GET /api/students/allocation-summary - count of students per Semester+Section
+router.get('/allocation-summary', verifyToken, requireRole('Admin', 'HOD', 'StudentCoordinator'), async (req, res) => {
+  try {
+    const summary = await StudentEntry.aggregate([
+      { $match: { Semester: { $ne: '' }, Section: { $ne: '' } } },
+      { $group: { _id: { Semester: '$Semester', Section: '$Section' }, count: { $sum: 1 } } },
+      { $sort: { '_id.Semester': 1, '_id.Section': 1 } },
+    ])
+    res.json(summary)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// PATCH /api/students/:id/unallocate - remove Semester/Section from one student
+router.patch('/:id/unallocate', verifyToken, requireRole('Admin', 'StudentCoordinator'), async (req, res) => {
+  try {
+    const updated = await StudentEntry.findByIdAndUpdate(
+      req.params.id,
+      { Semester: '', Section: '' },
+      { new: true }
+    )
+    if (!updated) return res.status(404).json({ error: 'Student not found' })
+    res.json({ message: 'Student removed from allocation' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router
