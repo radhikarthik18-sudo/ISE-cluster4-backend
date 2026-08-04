@@ -30,6 +30,9 @@ app.use('/api/copo-mapping', copoMappingRoutes)
 const timeTableRoutes = require('./routes/timeTableRoutes')
 app.use('/api/timetable', timeTableRoutes)
 
+const classTeacherRoutes = require('./routes/classTeacherRoutes')
+app.use('/api/class-teacher', classTeacherRoutes)
+
 mongoose.connect(process.env.MONGO_URI)
     .then(()=>console.log('MongoDB connected'))
     .catch((err) => console.error('MongoDB Connection error:',err));
