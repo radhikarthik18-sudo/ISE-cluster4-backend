@@ -30,6 +30,8 @@ const studentSchema = new mongoose.Schema({
   MotherPhone: String,
   Semester: String,
   Section: String,
+  ProctorFacultyID: String,
+  ProctorFacultyName: String,
   submittedAt: {
     type: Date,
     default: Date.now,
