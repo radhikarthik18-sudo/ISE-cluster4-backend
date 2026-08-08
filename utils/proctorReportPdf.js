@@ -38,13 +38,9 @@ function groupProctorUSNs(students) {
 }
 
 const PAGE_MARGIN = 45
-const PAGE_WIDTH = 595.28 // A4 portrait
+const PAGE_WIDTH = 595.28
 const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2
 
-// PDFKit's built-in standard fonts don't include true "Times New Roman" —
-// Times-Roman is the closest built-in serif equivalent, no extra font
-// files needed. Swap these two constants for a custom .ttf path + doc.registerFont(...)
-// if an exact Times New Roman match is ever required.
 const BODY_FONT = 'Times-Roman'
 const BODY_FONT_SIZE = 9
 const HEADER_FONT = 'Times-Bold'
@@ -73,11 +69,19 @@ function contactBlock(name, phone, email, extraLine) {
 }
 
 /**
- * Draws a table with optional rowspan-merged columns, using PDFKit's
- * bufferPages + switchToPage so merges stay correct even when a group of
- * equal values spans a page break. A merged group never straddles a page
- * break — it closes out at the bottom of one page and restarts fresh on
- * the next.
+ * Draws a table with optional rowspan-merged columns.
+ *
+ * Two-pass layout:
+ *  Pass 1 — compute each row's height from ONLY its non-merged cells
+ *  (the merged cell's own multi-line text is NOT part of any single
+ *  row's height — it's drawn once across the whole block, not per row).
+ *  Then, for each merge column, walk its contiguous same-value runs and
+ *  make sure the run's total height is enough to actually fit that
+ *  column's text; if not, the deficit is added to the run's last row.
+ *
+ *  Pass 2 — render using those finalized heights, still closing a merge
+ *  group early if a page break falls inside it (so a merged cell never
+ *  straddles two pages), using bufferPages + switchToPage.
  *
  * columns: [{ label, width, mergeKey? }]
  * rows:    [{ cells: [text,...], mergeValues: { colIndex: value } }]
@@ -86,9 +90,35 @@ function drawMergeableTable(doc, { columns, rows, drawHeader }) {
   const startX = PAGE_MARGIN
   const mergeColIndexes = columns.map((c, i) => (c.mergeKey ? i : null)).filter((i) => i !== null)
 
+  // --- Pass 1a: base height per row, from non-merged cells only ---
+  doc.font(BODY_FONT).fontSize(BODY_FONT_SIZE)
+  const heights = rows.map((row) => {
+    const nonMergedHeights = row.cells
+      .map((text, i) => (mergeColIndexes.includes(i) ? 0 : doc.heightOfString(text || '', { width: columns[i].width - 6 })))
+    return Math.max(...nonMergedHeights, 10) + 10
+  })
+
+  // --- Pass 1b: pad the last row of each merge run if the merged text needs more room than the run currently has ---
+  mergeColIndexes.forEach((colIndex) => {
+    let runStart = 0
+    for (let i = 1; i <= rows.length; i++) {
+      const runBroke = i === rows.length || rows[i].mergeValues[colIndex] !== rows[runStart].mergeValues[colIndex]
+      if (runBroke) {
+        const runEnd = i - 1
+        const value = rows[runStart].mergeValues[colIndex]
+        const requiredHeight = doc.heightOfString(value || '', { width: columns[colIndex].width - 6 }) + 10
+        const availableHeight = heights.slice(runStart, runEnd + 1).reduce((a, b) => a + b, 0)
+        if (requiredHeight > availableHeight) {
+          heights[runEnd] += requiredHeight - availableHeight
+        }
+        runStart = i
+      }
+    }
+  })
+
+  // --- Pass 2: actual render, using the finalized heights ---
   const openGroups = {}
   const finishedGroups = []
-
   const closeGroup = (colIndex) => {
     const g = openGroups[colIndex]
     if (!g) return
@@ -98,10 +128,8 @@ function drawMergeableTable(doc, { columns, rows, drawHeader }) {
 
   drawHeader(doc, startX)
 
-  rows.forEach((row) => {
-    doc.font(BODY_FONT).fontSize(BODY_FONT_SIZE)
-    const cellHeights = row.cells.map((text, i) => doc.heightOfString(text || '', { width: columns[i].width - 6 }))
-    const rowHeight = Math.max(...cellHeights, 14) + 10
+  rows.forEach((row, rowIndex) => {
+    const rowHeight = heights[rowIndex]
 
     const pageBottom = doc.page.height - PAGE_MARGIN
     if (doc.y + rowHeight > pageBottom) {
@@ -109,9 +137,9 @@ function drawMergeableTable(doc, { columns, rows, drawHeader }) {
       doc.addPage()
       doc.y = PAGE_MARGIN
       drawHeader(doc, startX)
-      doc.font(BODY_FONT).fontSize(BODY_FONT_SIZE)
     }
 
+    doc.font(BODY_FONT).fontSize(BODY_FONT_SIZE)
     const rowY = doc.y
     const pageIndex = doc.bufferedPageRange().count - 1
 
