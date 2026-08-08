@@ -1,27 +1,18 @@
 const PDFDocument = require('pdfkit')
 
-// Splits a USN like "1BY23IS001" into a letter/digit prefix ("1BY23IS")
-// and a trailing number (1), so runs of consecutive students can be detected.
 function parseUSN(usn) {
   const match = /^(.*\D)(\d+)$/.exec(usn || '')
   if (!match) return null
   return { prefix: match[1], number: parseInt(match[2], 10) }
 }
 
-// For one proctor's set of students, finds the single largest contiguous
-// USN run (same prefix, consecutive numbers) and treats everyone else
-// assigned to that proctor as an "extra" addition.
 function groupProctorUSNs(students) {
-  const parsed = students
-    .map((s) => ({ ...s, parsed: parseUSN(s.USN) }))
-    .filter((s) => s.parsed)
-
+  const parsed = students.map((s) => ({ ...s, parsed: parseUSN(s.USN) })).filter((s) => s.parsed)
   const byPrefix = {}
   parsed.forEach((s) => {
     byPrefix[s.parsed.prefix] = byPrefix[s.parsed.prefix] || []
     byPrefix[s.parsed.prefix].push(s)
   })
-
   let bestRun = []
   Object.values(byPrefix).forEach((group) => {
     group.sort((a, b) => a.parsed.number - b.parsed.number)
@@ -35,10 +26,8 @@ function groupProctorUSNs(students) {
       }
     }
   })
-
   const bestRunUSNs = new Set(bestRun.map((s) => s.USN))
   const extras = parsed.filter((s) => !bestRunUSNs.has(s.USN)).sort((a, b) => a.USN.localeCompare(b.USN))
-
   return {
     rangeFrom: bestRun[0]?.USN || null,
     rangeTo: bestRun[bestRun.length - 1]?.USN || null,
@@ -49,141 +38,200 @@ function groupProctorUSNs(students) {
 }
 
 const PAGE_MARGIN = 45
-const CONTENT_WIDTH = 595.28 - PAGE_MARGIN * 2 // A4 portrait width minus margins
+const PAGE_WIDTH = 595.28 // A4 portrait
+const CONTENT_WIDTH = PAGE_WIDTH - PAGE_MARGIN * 2
+
+// PDFKit's built-in standard fonts don't include true "Times New Roman" —
+// Times-Roman is the closest built-in serif equivalent, no extra font
+// files needed. Swap these two constants for a custom .ttf path + doc.registerFont(...)
+// if an exact Times New Roman match is ever required.
+const BODY_FONT = 'Times-Roman'
+const BODY_FONT_SIZE = 9
+const HEADER_FONT = 'Times-Bold'
+const HEADER_FONT_SIZE = 9
 
 function drawLetterhead(doc, { departmentName, title, subtitle }) {
-  doc.font('Helvetica-Bold').fontSize(16).text('BMS Institute of Technology and Management', PAGE_MARGIN, doc.y, {
+  doc.font('Times-Bold').fontSize(16).text('BMS Institute of Technology and Management', PAGE_MARGIN, doc.y, {
     align: 'center',
     width: CONTENT_WIDTH,
   })
-  doc.font('Helvetica').fontSize(9)
+  doc.font('Times-Roman').fontSize(9)
   doc.text('(Autonomous Under VTU)', { align: 'center' })
   doc.text('(Accredited By National Assessment & Accreditation Council (NAAC))', { align: 'center' })
   doc.text('(Approved by AICTE, New Delhi & Affiliated to Visvesvaraya Technological University, Belagavi)', { align: 'center' })
   doc.text('Doddaballapura Main Road, Avalahalli, Yelahanka, Bengaluru-560064', { align: 'center' })
   doc.moveDown(0.5)
-  doc.font('Helvetica-Bold').fontSize(11).text(departmentName, { align: 'center' })
+  doc.font('Times-Bold').fontSize(11).text(departmentName, { align: 'center' })
   doc.moveDown(0.3)
   doc.fontSize(11).text(title, { align: 'center' })
-  if (subtitle) {
-    doc.fontSize(11).text(subtitle, { align: 'center' })
-  }
+  if (subtitle) doc.fontSize(11).text(subtitle, { align: 'center' })
   doc.moveDown(0.7)
 }
 
-function drawSummaryTable(doc, rows) {
-  const colWidths = [30, 70, 180, 60, 155]
-  const colLabels = ['Sl.\nNo', 'Section', 'USN From - To', 'No of\nStudents', 'Proctor Details']
-  const startX = PAGE_MARGIN
+function contactBlock(name, phone, email, extraLine) {
+  return [name, phone, email, extraLine].filter(Boolean).join('\n')
+}
 
-  const drawHeader = () => {
+/**
+ * Draws a table with optional rowspan-merged columns, using PDFKit's
+ * bufferPages + switchToPage so merges stay correct even when a group of
+ * equal values spans a page break. A merged group never straddles a page
+ * break — it closes out at the bottom of one page and restarts fresh on
+ * the next.
+ *
+ * columns: [{ label, width, mergeKey? }]
+ * rows:    [{ cells: [text,...], mergeValues: { colIndex: value } }]
+ */
+function drawMergeableTable(doc, { columns, rows, drawHeader }) {
+  const startX = PAGE_MARGIN
+  const mergeColIndexes = columns.map((c, i) => (c.mergeKey ? i : null)).filter((i) => i !== null)
+
+  const openGroups = {}
+  const finishedGroups = []
+
+  const closeGroup = (colIndex) => {
+    const g = openGroups[colIndex]
+    if (!g) return
+    finishedGroups.push({ colIndex, ...g })
+    delete openGroups[colIndex]
+  }
+
+  drawHeader(doc, startX)
+
+  rows.forEach((row) => {
+    doc.font(BODY_FONT).fontSize(BODY_FONT_SIZE)
+    const cellHeights = row.cells.map((text, i) => doc.heightOfString(text || '', { width: columns[i].width - 6 }))
+    const rowHeight = Math.max(...cellHeights, 14) + 10
+
+    const pageBottom = doc.page.height - PAGE_MARGIN
+    if (doc.y + rowHeight > pageBottom) {
+      mergeColIndexes.forEach(closeGroup)
+      doc.addPage()
+      doc.y = PAGE_MARGIN
+      drawHeader(doc, startX)
+      doc.font(BODY_FONT).fontSize(BODY_FONT_SIZE)
+    }
+
+    const rowY = doc.y
+    const pageIndex = doc.bufferedPageRange().count - 1
+
     let x = startX
-    doc.font('Helvetica-Bold').fontSize(8)
+    row.cells.forEach((text, i) => {
+      const isMerged = mergeColIndexes.includes(i)
+      if (!isMerged) {
+        doc.rect(x, rowY, columns[i].width, rowHeight).stroke()
+        doc.text(text || '', x + 3, rowY + 5, { width: columns[i].width - 6 })
+      } else {
+        const value = row.mergeValues[i]
+        const g = openGroups[i]
+        if (!g) {
+          openGroups[i] = { startPage: pageIndex, startY: rowY, endY: rowY + rowHeight, value, x, width: columns[i].width }
+        } else if (g.value === value && g.startPage === pageIndex) {
+          g.endY = rowY + rowHeight
+        } else {
+          closeGroup(i)
+          openGroups[i] = { startPage: pageIndex, startY: rowY, endY: rowY + rowHeight, value, x, width: columns[i].width }
+        }
+      }
+      x += columns[i].width
+    })
+
+    doc.y = rowY + rowHeight
+  })
+
+  mergeColIndexes.forEach(closeGroup)
+
+  const lastPageIndex = doc.bufferedPageRange().count - 1
+  finishedGroups.forEach((g) => {
+    doc.switchToPage(g.startPage)
+    doc.rect(g.x, g.startY, g.width, g.endY - g.startY).stroke()
+    doc.font(BODY_FONT).fontSize(BODY_FONT_SIZE)
+    const textHeight = doc.heightOfString(g.value || '', { width: g.width - 6 })
+    const centeredY = g.startY + Math.max(4, (g.endY - g.startY - textHeight) / 2)
+    doc.text(g.value || '', g.x + 3, centeredY, { width: g.width - 6, align: 'center' })
+  })
+
+  doc.switchToPage(lastPageIndex)
+}
+
+function drawSummaryTable(doc, summaryRows) {
+  const columns = [
+    { label: 'Sl.\nNo', width: 30 },
+    { label: 'Section', width: 65, mergeKey: true },
+    { label: 'USN From - To', width: 185 },
+    { label: 'No of\nStudents', width: 60 },
+    { label: 'Proctor Details', width: 165 },
+  ]
+
+  const drawHeader = (doc, startX) => {
+    let x = startX
+    doc.font(HEADER_FONT).fontSize(HEADER_FONT_SIZE)
     const headerY = doc.y
-    colLabels.forEach((label, i) => {
-      doc.rect(x, headerY, colWidths[i], 22).stroke()
-      doc.text(label, x + 3, headerY + 4, { width: colWidths[i] - 6 })
-      x += colWidths[i]
+    columns.forEach((col) => {
+      doc.rect(x, headerY, col.width, 22).stroke()
+      doc.text(col.label, x + 3, headerY + 4, { width: col.width - 6 })
+      x += col.width
     })
     doc.y = headerY + 22
   }
 
-  drawHeader()
-
-  doc.font('Helvetica').fontSize(8)
-  rows.forEach((row, idx) => {
+  const rows = summaryRows.map((row, idx) => {
     const rangeText = row.rangeFrom
-      ? `${row.rangeFrom} - ${row.rangeTo}${row.extras.length ? '\n' + row.extras.map((e) => `${e.StudentName} (${e.USN})`).join(', ') : ''}`
+      ? `${row.rangeFrom} - ${row.rangeTo}` +
+        (row.extras.length ? '\n' + row.extras.map((e) => `${e.StudentName} (${e.USN})`).join(', ') : '')
       : row.extras.map((e) => `${e.StudentName} (${e.USN})`).join(', ')
-    const countText = row.extras.length
-      ? `${row.rangeCount}+${row.extras.length}\n=${row.totalCount}`
-      : `${row.totalCount}`
-    const proctorText = `${row.FacultyName}\n${row.Phone || ''}\n${row.Email || ''}`
+    const countText = row.extras.length ? `${row.rangeCount}+${row.extras.length}\n=${row.totalCount}` : `${row.totalCount}`
+    const proctorText = contactBlock(row.FacultyName, row.Phone, row.Email)
 
-    const cellTexts = [String(idx + 1), row.Section, rangeText, countText, proctorText]
-    const rowHeights = cellTexts.map((text, i) => doc.heightOfString(text, { width: colWidths[i] - 6 }))
-    const rowHeight = Math.max(...rowHeights) + 8
-
-    if (doc.y + rowHeight > doc.page.height - PAGE_MARGIN - 60) {
-      doc.addPage()
-      doc.y = PAGE_MARGIN
-      drawHeader()
+    return {
+      cells: [String(idx + 1), row.Section, rangeText, countText, proctorText],
+      mergeValues: { 1: row.Section },
     }
-
-    let x = startX
-    const rowY = doc.y
-    cellTexts.forEach((text, i) => {
-      doc.rect(x, rowY, colWidths[i], rowHeight).stroke()
-      doc.text(text, x + 3, rowY + 4, { width: colWidths[i] - 6 })
-      x += colWidths[i]
-    })
-    doc.y = rowY + rowHeight
   })
 
+  drawMergeableTable(doc, { columns, rows, drawHeader })
   doc.moveDown(1)
 }
 
-function drawDetailTables(doc, divisions) {
-  const colWidths = [55, 40, 90, 175, 135]
-  const colLabels = ['Division', 'Sl.No', 'USN', 'Proctee Name', 'Proctor Name']
-  const startX = PAGE_MARGIN
-  const rowHeight = 15
+function drawDetailTable(doc, divisions) {
+  const columns = [
+    { label: 'Division', width: 55, mergeKey: true },
+    { label: 'Sl.No', width: 40 },
+    { label: 'USN', width: 90 },
+    { label: 'Proctee Name', width: 175 },
+    { label: 'Proctor Name', width: 145, mergeKey: true },
+  ]
 
-  const drawHeader = () => {
+  const drawHeader = (doc, startX) => {
     let x = startX
-    doc.font('Helvetica-Bold').fontSize(8)
+    doc.font(HEADER_FONT).fontSize(HEADER_FONT_SIZE)
     const headerY = doc.y
-    colLabels.forEach((label, i) => {
-      doc.rect(x, headerY, colWidths[i], 18).stroke()
-      doc.text(label, x + 3, headerY + 5, { width: colWidths[i] - 6 })
-      x += colWidths[i]
+    columns.forEach((col) => {
+      doc.rect(x, headerY, col.width, 18).stroke()
+      doc.text(col.label, x + 3, headerY + 5, { width: col.width - 6 })
+      x += col.width
     })
     doc.y = headerY + 18
   }
 
-  doc.addPage()
-  doc.y = PAGE_MARGIN
-  drawHeader()
-  doc.font('Helvetica').fontSize(8)
-
+  const rows = []
   divisions.forEach((division) => {
     let slNo = 1
     division.proctorBlocks.forEach((block) => {
-      const blockStartY = doc.y
-
+      const proctorLabel = contactBlock(block.FacultyName, block.Phone, block.Email, `(${block.students.length})`)
       block.students.forEach((student) => {
-        if (doc.y + rowHeight > doc.page.height - PAGE_MARGIN) {
-          doc.addPage()
-          doc.y = PAGE_MARGIN
-          drawHeader()
-        }
-        const rowY = doc.y
-        doc.rect(startX, rowY, colWidths[0], rowHeight).stroke()
-        doc.rect(startX + colWidths[0], rowY, colWidths[1], rowHeight).stroke()
-        doc.rect(startX + colWidths[0] + colWidths[1], rowY, colWidths[2], rowHeight).stroke()
-        doc.rect(startX + colWidths[0] + colWidths[1] + colWidths[2], rowY, colWidths[3], rowHeight).stroke()
-
-        doc.text(division.name, startX + 3, rowY + 4, { width: colWidths[0] - 6 })
-        doc.text(String(slNo), startX + colWidths[0] + 3, rowY + 4, { width: colWidths[1] - 6 })
-        doc.text(student.USN, startX + colWidths[0] + colWidths[1] + 3, rowY + 4, { width: colWidths[2] - 6 })
-        doc.text(student.StudentName, startX + colWidths[0] + colWidths[1] + colWidths[2] + 3, rowY + 4, {
-          width: colWidths[3] - 6,
+        rows.push({
+          cells: [division.name, String(slNo), student.USN, student.StudentName, proctorLabel],
+          mergeValues: { 0: division.name, 4: proctorLabel },
         })
-
-        doc.y = rowY + rowHeight
         slNo++
       })
-
-      // Proctor Name column drawn once per block, vertically spanning that block's rows
-      const blockEndY = doc.y
-      const proctorColX = startX + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3]
-      doc.rect(proctorColX, blockStartY, colWidths[4], blockEndY - blockStartY).stroke()
-      const proctorText = `${block.FacultyName}\n${block.Phone || ''}\n${block.Email || ''}\n(${block.students.length})`
-      const textHeight = doc.heightOfString(proctorText, { width: colWidths[4] - 6 })
-      const centeredY = blockStartY + Math.max(4, (blockEndY - blockStartY - textHeight) / 2)
-      doc.text(proctorText, proctorColX + 3, centeredY, { width: colWidths[4] - 6, align: 'center' })
     })
   })
+
+  doc.addPage()
+  doc.y = PAGE_MARGIN
+  drawMergeableTable(doc, { columns, rows, drawHeader })
 }
 
 function drawSignatures(doc) {
@@ -196,15 +244,14 @@ function drawSignatures(doc) {
   const labels = ['Proctor Coordinator', 'Cluster-4 Head', 'HOD']
   const colWidth = CONTENT_WIDTH / labels.length
   const y = doc.y + 30
-  doc.font('Helvetica-Bold').fontSize(9)
+  doc.font('Times-Bold').fontSize(9)
   labels.forEach((label, i) => {
     doc.text(label, PAGE_MARGIN + i * colWidth, y, { width: colWidth, align: 'center' })
   })
 }
 
-// Main entry point. Returns a PDFDocument stream ready to pipe to a response.
 function generateProctorReportPdf({ semester, academicYear, term, divisions }) {
-  const doc = new PDFDocument({ margin: PAGE_MARGIN, size: 'A4' })
+  const doc = new PDFDocument({ margin: PAGE_MARGIN, size: 'A4', bufferPages: true })
 
   drawLetterhead(doc, {
     departmentName: 'DEPARTMENT OF INFORMATION SCIENCE & ENGINEERING',
@@ -225,8 +272,7 @@ function generateProctorReportPdf({ semester, academicYear, term, divisions }) {
     })
   })
   drawSummaryTable(doc, summaryRows)
-
-  drawDetailTables(doc, divisions)
+  drawDetailTable(doc, divisions)
   drawSignatures(doc)
 
   doc.end()
