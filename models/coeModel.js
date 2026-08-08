@@ -41,6 +41,7 @@ const coeSchema = new mongoose.Schema({
 
   Entries: [weekEntrySchema],
   Events: [eventSchema],
+  SemesterEndExams: String,
 })
 
 const COE = mongoose.model('COE', coeSchema)
