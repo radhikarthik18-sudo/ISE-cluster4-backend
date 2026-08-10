@@ -109,4 +109,16 @@ router.get('/:id/particular/:slNo/pdf', verifyToken, requireRole(...ALLOWED_ROLE
   }
 })
 
+// GET /api/course-file/:id - fetch a course file directly by its Mongo _id
+// (used by the standalone particular page, which only has the id + slNo from the URL)
+router.get('/:id', verifyToken, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  try {
+    const cf = await CourseFile.findById(req.params.id)
+    if (!cf) return res.status(404).json({ error: 'Course file not found' })
+    res.json(cf)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 module.exports = router
