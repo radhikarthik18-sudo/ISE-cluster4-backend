@@ -23,7 +23,7 @@ const courseFileSchema = new mongoose.Schema(
         AcademicYear: String,
         Batch: String,
         Credits: String,
-        LTPS: Strings,
+        LTPS: String,
         CIEMarks: String,
         SEEMarks: String,
         CourseCoordinatorName: String,
