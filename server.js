@@ -39,6 +39,9 @@ app.use('/api/proctor', proctorRoutes)
 const iaConfigRoutes = require('./routes/iaConfigRoutes')
 app.use('/api/ia-config', iaConfigRoutes)
 
+const courseFileRoutes = require('./routes/courseFileRoutes')
+app.use('/api/course-file', courseFileRoutes)
+
 mongoose.connect(process.env.MONGO_URI)
     .then(()=>console.log('MongoDB connected'))
     .catch((err) => console.error('MongoDB Connection error:',err));
