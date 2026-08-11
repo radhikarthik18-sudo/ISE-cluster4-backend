@@ -42,6 +42,11 @@ const coeSchema = new mongoose.Schema({
   Entries: [weekEntrySchema],
   Events: [eventSchema],
   SemesterEndExams: String,
+  SignedPDF:{
+    data: Buffer,
+    contentType: String,
+    filename: String,
+  }
 })
 
 const COE = mongoose.model('COE', coeSchema)
