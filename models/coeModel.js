@@ -42,7 +42,7 @@ const coeSchema = new mongoose.Schema({
   Entries: [weekEntrySchema],
   Events: [eventSchema],
   SemesterEndExams: String,
-  SignedPDF:{
+  SignedPdf:{
     data: Buffer,
     contentType: String,
     filename: String,
