@@ -1,16 +1,19 @@
 const mongoose = require('mongoose')
 
-const componentSchema = new mongoose.Schema({
-  Type: String,          // 'Theory' or 'Practical'
-  Name: String,           // 'CIE-IA Tests', 'CIE-CCA', etc.
-  Count: Number,          // how many instances (e.g., 3 IA tests)
-  ActualMarks: Number,    // marks entered raw (e.g., 40)
-  ReducedMarks: Number,   // marks it contributes after scaling (e.g., 20)
-})
+const componentSchema = new mongoose.Schema(
+  {
+    Key: { type: String, required: true }, // slug used as the tab id, e.g. "ia1"
+    Label: { type: String, required: true }, // display name, e.g. "IA1"
+    MaxMarks: { type: Number, required: true },
+  },
+  { _id: false }
+)
 
 const iaConfigSchema = new mongoose.Schema({
-  CourseCategory: { type: String, required: true, unique: true },
+  CourseCode: { type: String, required: true, unique: true },
+  CourseCategory: String,
   Components: [componentSchema],
+  TotalMarks: Number,
 })
 
 module.exports = mongoose.model('IAConfig', iaConfigSchema)
