@@ -4,7 +4,11 @@ const CourseFile = require('../models/courseFileModel')
 const { verifyToken, requireRole } = require('../middleware/authMiddleware')
 const { buildDefaultParticulars } = require('../utils/courseFileParticulars')
 const { generateCourseFileIndexPdf, generateParticularPdf } = require('../utils/courseFileReportPdf')
-
+const { PDFDocument: PDFLibDocument } = require('pdf-lib')
+const { generateSyllabusCoverPdf } = require('../utils/syllabusReportPdf')
+const Course = require('../models/courseModel')
+const CourseFacultyMap = require('../models/courseFacultyMapModel')
+const Faculty = require('../models/facultyrecordmodels')
 const ALLOWED_ROLES = ['Admin', 'HOD', 'Faculty', 'ChiefCourseCoordinator']
 
 // GET /api/course-file?CourseCode=X
@@ -116,6 +120,48 @@ router.get('/:id', verifyToken, requireRole(...ALLOWED_ROLES), async (req, res) 
     const cf = await CourseFile.findById(req.params.id)
     if (!cf) return res.status(404).json({ error: 'Course file not found' })
     res.json(cf)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+// GET /api/course-file/:id/syllabus-pdf - full syllabus document:
+// institutional header + admin details + prerequisites + the actual uploaded syllabus, merged into one PDF
+router.get('/:id/syllabus-pdf', verifyToken, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  try {
+    const cf = await CourseFile.findById(req.params.id)
+    if (!cf) return res.status(404).json({ error: 'Course file not found' })
+
+    const course = await Course.findOne({ CourseCode: cf.CourseCode })
+    if (!course) return res.status(404).json({ error: 'Course not found' })
+    if (!course.SyllabusPDF || !course.SyllabusPDF.data) {
+      return res.status(404).json({ error: 'No syllabus uploaded for this course yet. Upload one in Course List first.' })
+    }
+
+    const mappings = await CourseFacultyMap.find({ CourseCode: cf.CourseCode })
+    const facultyIds = [...new Set(mappings.map((m) => m.FacultyID))]
+    const facultyRecords = await Faculty.find({ FacultyID: { $in: facultyIds } }).select('FacultyID Name Designation Email')
+    const facultyRows = facultyRecords.map((f) => ({ Name: f.Name, Designation: f.Designation, Email: f.Email }))
+
+    const coverBytes = await generateSyllabusCoverPdf({
+      departmentName: 'DEPARTMENT OF INFORMATION SCIENCE & ENGINEERING',
+      course,
+      facultyRows,
+    })
+
+    const mergedPdf = await PDFLibDocument.create()
+    const coverDoc = await PDFLibDocument.load(coverBytes)
+    const uploadedDoc = await PDFLibDocument.load(course.SyllabusPDF.data)
+
+    const coverPages = await mergedPdf.copyPages(coverDoc, coverDoc.getPageIndices())
+    coverPages.forEach((p) => mergedPdf.addPage(p))
+    const uploadedPages = await mergedPdf.copyPages(uploadedDoc, uploadedDoc.getPageIndices())
+    uploadedPages.forEach((p) => mergedPdf.addPage(p))
+
+    const finalBytes = await mergedPdf.save()
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="Syllabus_${cf.CourseCode}.pdf"`)
+    res.send(Buffer.from(finalBytes))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
