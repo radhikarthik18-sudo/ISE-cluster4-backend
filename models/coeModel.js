@@ -11,15 +11,15 @@ const weekEntrySchema = new mongoose.Schema({
   Thu: String,
   Fri: String,
   Sat: String,
-  WorkingDays: Number, // now auto-computed, stored for record-keeping
+  WorkingDays: Number,
 })
 
 const eventSchema = new mongoose.Schema(
   {
     Text: String,
     Color: String,
-    Date: String, // ISO "YYYY-MM-DD"
-    IsHoliday: { type: Boolean, default: false }, // true = reduces Working Days count
+    Date: String,
+    IsHoliday: { type: Boolean, default: false },
   },
   { _id: false }
 )
@@ -42,11 +42,16 @@ const coeSchema = new mongoose.Schema({
   Entries: [weekEntrySchema],
   Events: [eventSchema],
   SemesterEndExams: String,
-  SignedPdf:{
+  SignedPDF: {
     data: Buffer,
     contentType: String,
     filename: String,
-  }
+  },
+
+  // 'NotSubmitted' -> Print freely (draft/preview).
+  // 'Pending' -> Print disabled while awaiting Academic Coordinator approval.
+  // 'Approved' -> Print re-enabled.
+  ApprovalStatus: { type: String, enum: ['NotSubmitted', 'Pending', 'Approved'], default: 'NotSubmitted' },
 })
 
 const COE = mongoose.model('COE', coeSchema)
