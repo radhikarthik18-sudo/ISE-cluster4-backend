@@ -5,7 +5,7 @@ const componentSchema = new mongoose.Schema(
     Key: { type: String, required: true }, // slug used as the tab id, e.g. "ia1"
     Label: { type: String, required: true }, // display name, e.g. "IA1"
     MaxMarks: { type: Number, required: true },
-    Type: { type: String, enum: ['IA', 'CCA', 'Other'], default: 'Other' },
+    Type: { type: String, enum: ['IA', 'CCA', 'Practical', 'Practical Test', 'Other'], default: 'Other' },
   },
   { _id: false }
 )
