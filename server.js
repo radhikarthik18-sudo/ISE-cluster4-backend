@@ -45,6 +45,8 @@ app.use('/api/course-file', courseFileRoutes)
 const approvalRoutes = require('./routes/approvalRoutes')
 app.use('/api/approval', approvalRoutes)
 
+const iaQuestionPaperRoutes = require('./routes/iaQuestionPaperRoutes')
+app.use('/api/ia-question-paper', iaQuestionPaperRoutes)
 mongoose.connect(process.env.MONGO_URI)
     .then(()=>console.log('MongoDB connected'))
     .catch((err) => console.error('MongoDB Connection error:',err));
